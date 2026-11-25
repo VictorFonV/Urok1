@@ -1,11 +1,130 @@
-import random, string
+import secrets
+import string
+from pathlib import Path
 
-chars = string.ascii_letters + string.digits + "!@#$%^&*"
-length = int(input("Довжина пароля: "))
-password = "".join(random.choice(chars) for _ in range(length))
+LOWER = string.ascii_lowercase
+UPPER = string.ascii_uppercase
+DIGITS = string.digits
+SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?"
 
-print("Ваш пароль:", password)
-if length < 8:
-  print("Порада: краще взяти від 8 символів.")
-elif not any(c.isdigit() for c in password):
-  print("Порада: додайте цифри для надійності.")
+
+def get_positive_int(prompt: str, default: int, min_val: int = 1) -> int:
+  raw = input(f"{prompt} [{default}]: ").strip()
+  if not raw:
+    return default
+  try:
+    value = int(raw)
+    return value if value >= min_val else default
+  except ValueError:
+    return default
+
+
+def ask_yes_no(prompt: str, default: bool = True) -> bool:
+  hint = "Д/н" if default else "д/Н"
+  raw = input(f"{prompt} ({hint}): ").strip().lower()
+  if not raw:
+    return default
+  return raw in {"д", "да", "y", "yes", "1", "+"}
+
+
+def build_pool(
+    use_lower: bool, use_upper: bool, use_digits: bool, use_symbols: bool
+) -> list[str]:
+  groups = []
+  if use_lower:
+    groups.append(LOWER)
+  if use_upper:
+    groups.append(UPPER)
+  if use_digits:
+    groups.append(DIGITS)
+  if use_symbols:
+    groups.append(SYMBOLS)
+  return groups or [LOWER, DIGITS]
+
+
+def generate_password(length: int, groups: list[str]) -> str:
+  pool = "".join(groups)
+  # Гарантуємо щонайменше по одному символу з кожного обраного набору
+  guaranteed = [secrets.choice(group) for group in groups[:length]]
+  remaining = [secrets.choice(pool) for _ in range(max(0, length - len(guaranteed)))]
+  combined = guaranteed + remaining
+  secrets.SystemRandom().shuffle(combined)
+  return "".join(combined)
+
+
+def evaluate_strength(password: str) -> tuple[str, list[str]]:
+  score = 0
+  tips = []
+
+  has_lower = any(c in LOWER for c in password)
+  has_upper = any(c in UPPER for c in password)
+  has_digit = any(c in DIGITS for c in password)
+  has_symbol = any(c in SYMBOLS for c in password)
+
+  if len(password) >= 8:
+    score += 1
+  else:
+    tips.append("збільште довжину хоча б до 8–12 символів")
+
+  if len(password) >= 12:
+    score += 1
+  if len(password) >= 16:
+    score += 1
+
+  variety = sum([has_lower, has_upper, has_digit, has_symbol])
+  score += variety
+
+  if not has_upper:
+    tips.append("додайте великі літери")
+  if not has_digit:
+    tips.append("додайте цифри")
+  if not has_symbol:
+    tips.append("додайте спецсимволи")
+
+  if score <= 2:
+    rating = "Слабкий"
+  elif score <= 4:
+    rating = "Середній"
+  elif score <= 6:
+    rating = "Надійний"
+  else:
+    rating = "Дуже надійний"
+
+  return rating, tips
+
+
+def save_passwords(passwords: list[str], filename: str = "passwords.txt") -> Path:
+  path = Path(filename)
+  with path.open("a", encoding="utf-8") as file:
+    for pwd in passwords:
+      file.write(pwd + "\n")
+  return path.resolve()
+
+
+def main() -> None:
+  print("=== Генератор та аналізатор паролів ===")
+  length = get_positive_int("Довжина пароля", default=14, min_val=4)
+  count = get_positive_int("Кількість паролів", default=3, min_val=1)
+
+  use_lower = ask_yes_no("Використовувати малі літери (a-z)?", default=True)
+  use_upper = ask_yes_no("Використовувати великі літери (A-Z)?", default=True)
+  use_digits = ask_yes_no("Використовувати цифри (0-9)?", default=True)
+  use_symbols = ask_yes_no("Використовувати спецсимволи?", default=True)
+
+  groups = build_pool(use_lower, use_upper, use_digits, use_symbols)
+  generated = [generate_password(length, groups) for _ in range(count)]
+
+  print("\nЗгенеровані паролі:")
+  for idx, pwd in enumerate(generated, start=1):
+    rating, tips = evaluate_strength(pwd)
+    print(f"{idx}. {pwd}  [{rating}]")
+    if tips:
+      print("   Рекомендації: " + ", ".join(tips))
+
+  if ask_yes_no("\nЗберегти паролі у файл passwords.txt?", default=False):
+    saved_path = save_passwords(generated)
+    print(f"Збережено у: {saved_path}")
+
+
+if __name__ == "__main__":
+  main()
