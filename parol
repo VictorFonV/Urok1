@@ -1,76 +1,130 @@
-# Password Generator & Strength Analyzer
+import secrets
+import string
+from pathlib import Path
 
-Консольна утиліта на **Python** для криптографічно стійкої генерації паролів, налаштування набору символів, оцінки надійності та збереження результатів у файл.
+LOWER = string.ascii_lowercase
+UPPER = string.ascii_uppercase
+DIGITS = string.digits
+SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?"
 
-## Зміст
 
-* [Можливості](https://www.google.com/search?q=%23%D0%BC%D0%BE%D0%B6%D0%BB%D0%B8%D0%B2%D0%BE%D1%81%D1%82%D1%96)
-* [Вимоги та запуск](https://www.google.com/search?q=%23%D0%B2%D0%B8%D0%BC%D0%BE%D0%B3%D0%B8-%D1%82%D0%B0-%D0%B7%D0%B0%D0%BF%D1%83%D1%81%D0%BA)
-* [Приклад роботи](https://www.google.com/search?q=%23%D0%BF%D1%80%D0%B8%D0%BA%D0%BB%D0%B0%D0%B4-%D1%80%D0%BE%D0%B1%D0%BE%D1%82%D0%B8)
-* [Оцінка надійності](https://www.google.com/search?q=%23%D0%BE%D1%86%D1%96%D0%BD%D0%BA%D0%B0-%D0%BD%D0%B0%D0%B4%D1%96%D0%B9%D0%BD%D0%BE%D1%81%D1%82%D1%96)
-* [Структура проєкту](https://www.google.com/search?q=%23%D1%81%D1%82%D1%80%D1%83%D0%BA%D1%82%D1%83%D1%80%D0%B0-%D0%BF%D1%80%D0%BE%D1%94%D0%BA%D1%82%D1%83)
-* [Безпека](https://www.google.com/search?q=%23%D0%B1%D0%B5%D0%B7%D0%BF%D0%B5%D0%BA%D0%B0)
-* [Ліцензія](https://www.google.com/search?q=%23%D0%BB%D1%96%D1%86%D0%B5%D0%BD%D0%B7%D1%96%D1%8F)
+def get_positive_int(prompt: str, default: int, min_val: int = 1) -> int:
+  raw = input(f"{prompt} [{default}]: ").strip()
+  if not raw:
+    return default
+  try:
+    value = int(raw)
+    return value if value >= min_val else default
+  except ValueError:
+    return default
 
-## Можливості
 
-* **Криптографічна стійкість** — використовує модуль `secrets` та `SystemRandom` замість псевдовипадкового `random`.
-* **Гарантія різноманітності символів** — додає щонайменше по одному символу з кожної обраної групи (`a-z`, `A-Z`, `0-9`, спецсимволи).
-* **Гнучкі налаштування** — дає змогу задати довжину, кількість паролів і склад символів зі зручними значеннями за замовчуванням.
-* **Аналіз складності** — оцінює пароль за бальною шкалою та підказує, як підвищити його стійкість.
-* **Збереження у файл** — за запитом дописує згенеровані паролі у `passwords.txt` у кодуванні **UTF-8**.
+def ask_yes_no(prompt: str, default: bool = True) -> bool:
+  hint = "Д/н" if default else "д/Н"
+  raw = input(f"{prompt} ({hint}): ").strip().lower()
+  if not raw:
+    return default
+  return raw in {"д", "да", "y", "yes", "1", "+"}
 
-## Вимоги та запуск
 
-Потрібен **Python 3.9+** і жодних сторонніх пакетів — застосовується лише стандартна бібліотека.
+def build_pool(
+    use_lower: bool, use_upper: bool, use_digits: bool, use_symbols: bool
+) -> list[str]:
+  groups = []
+  if use_lower:
+    groups.append(LOWER)
+  if use_upper:
+    groups.append(UPPER)
+  if use_digits:
+    groups.append(DIGITS)
+  if use_symbols:
+    groups.append(SYMBOLS)
+  return groups or [LOWER, DIGITS]
 
-1. Клонуйте репозиторій та перейдіть до теки проєкту:
-git clone [https://github.com/username/password-generator.git](https://github.com/username/password-generator.git)
-cd password-generator
-2. Запустіть скрипт:
-python password_generator.py
 
-## Приклад роботи
+def generate_password(length: int, groups: list[str]) -> str:
+  pool = "".join(groups)
+  # Гарантуємо щонайменше по одному символу з кожного обраного набору
+  guaranteed = [secrets.choice(group) for group in groups[:length]]
+  remaining = [secrets.choice(pool) for _ in range(max(0, length - len(guaranteed)))]
+  combined = guaranteed + remaining
+  secrets.SystemRandom().shuffle(combined)
+  return "".join(combined)
 
-=== Генератор та аналізатор паролів ===
-Довжина пароля [14]: 16
-Кількість паролів [3]: 2
-Використовувати малі літери (a-z)? (Д/н):
-Використовувати великі літери (A-Z)? (Д/н):
-Використовувати цифри (0-9)? (Д/н):
-Використовувати спецсимволи? (Д/н):
 
-Згенеровані паролі:
+def evaluate_strength(password: str) -> tuple[str, list[str]]:
+  score = 0
+  tips = []
 
-1. k9#mP2$vLq8!xR4w  [Дуже надійний]
-2. T7@nB5&zQw3*pL9s  [Дуже надійний]
+  has_lower = any(c in LOWER for c in password)
+  has_upper = any(c in UPPER for c in password)
+  has_digit = any(c in DIGITS for c in password)
+  has_symbol = any(c in SYMBOLS for c in password)
 
-Зберегти паролі у файл passwords.txt? (д/Н): н
+  if len(password) >= 8:
+    score += 1
+  else:
+    tips.append("збільште довжину хоча б до 8–12 символів")
 
-> **Порада:** натисніть `Enter`, щоб обрати значення за замовчуванням, позначене у квадратних дужках або великою літерою (`Д` або `Н`).
+  if len(password) >= 12:
+    score += 1
+  if len(password) >= 16:
+    score += 1
 
-## Оцінка надійності
+  variety = sum([has_lower, has_upper, has_digit, has_symbol])
+  score += variety
 
-| Рівень | Загальна характеристика | Типові рекомендації для покращення |
-| --- | --- | --- |
-| **Слабкий** | Занадто короткий або однотипний пароль | Збільшити довжину, додати різні категорії символів |
-| **Середній** | Базовий рівень, вразливий до тривалого перебору | Збільшити довжину до 12–16+ символів, додати спецсимволи |
-| **Надійний** | Добра стійкість для більшості акаунтів | За можливості збільшити довжину від 16 символів |
-| **Дуже надійний** | Довжина від 16 символів і повний набір категорій | Додаткові зміни не потрібні |
+  if not has_upper:
+    tips.append("додайте великі літери")
+  if not has_digit:
+    tips.append("додайте цифри")
+  if not has_symbol:
+    tips.append("додайте спецсимволи")
 
-## Структура проєкту
+  if score <= 2:
+    rating = "Слабкий"
+  elif score <= 4:
+    rating = "Середній"
+  elif score <= 6:
+    rating = "Надійний"
+  else:
+    rating = "Дуже надійний"
 
-password-generator/
-├── password_generator.py   # Основний код генератора та аналізатора
-├── passwords.txt           # Створюється автоматично при збереженні паролів
-├── .gitignore              # Правила ігнорування локальних файлів і паролів
-└── README.md               # Документація проєкту
+  return rating, tips
 
-## Безпека
 
-* Додайте `passwords.txt` до `.gitignore`, щоб випадково не опублікувати паролі у відкритому репозиторії.
-* Для постійного зберігання паролів користуйтеся спеціалізованими менеджерами паролів (`KeePassXC`, `Bitwarden` тощо).
+def save_passwords(passwords: list[str], filename: str = "passwords.txt") -> Path:
+  path = Path(filename)
+  with path.open("a", encoding="utf-8") as file:
+    for pwd in passwords:
+      file.write(pwd + "\n")
+  return path.resolve()
 
-## Ліцензія
 
-Проєкт поширюється за ліцензією **[MIT](https://www.google.com/search?q=LICENSE)**.
+def main() -> None:
+  print("=== Генератор та аналізатор паролів ===")
+  length = get_positive_int("Довжина пароля", default=14, min_val=4)
+  count = get_positive_int("Кількість паролів", default=3, min_val=1)
+
+  use_lower = ask_yes_no("Використовувати малі літери (a-z)?", default=True)
+  use_upper = ask_yes_no("Використовувати великі літери (A-Z)?", default=True)
+  use_digits = ask_yes_no("Використовувати цифри (0-9)?", default=True)
+  use_symbols = ask_yes_no("Використовувати спецсимволи?", default=True)
+
+  groups = build_pool(use_lower, use_upper, use_digits, use_symbols)
+  generated = [generate_password(length, groups) for _ in range(count)]
+
+  print("\nЗгенеровані паролі:")
+  for idx, pwd in enumerate(generated, start=1):
+    rating, tips = evaluate_strength(pwd)
+    print(f"{idx}. {pwd}  [{rating}]")
+    if tips:
+      print("   Рекомендації: " + ", ".join(tips))
+
+  if ask_yes_no("\nЗберегти паролі у файл passwords.txt?", default=False):
+    saved_path = save_passwords(generated)
+    print(f"Збережено у: {saved_path}")
+
+
+if __name__ == "__main__":
+  main()
